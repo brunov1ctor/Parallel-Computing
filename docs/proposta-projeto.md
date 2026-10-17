@@ -22,7 +22,15 @@ Além do apelo técnico, o projeto propõe uma extensão para **3D**, com uma ce
 
 ## 2. Descrição do algoritmo
 
-### 2.1 Fundamentos do Lattice Boltzmann Method
+### 2.1 Alternativas consideradas e por que o LBM
+
+Antes de fechar a escolha do LBM, outras abordagens clássicas de simulação de fluidos foram avaliadas:
+
+- **Resolução direta de Navier-Stokes em grade ("Stable Fluids")**: abordagem usada em samples como o `fluidsGL` da NVIDIA, baseada no trabalho de Jos Stam (1999). Consiste em, a cada passo de tempo, aplicar forças externas, advecção semi-lagrangiana, difusão e um passo de **projeção**, que corrige o campo de velocidade para que ele fique livre de divergência resolvendo uma equação de Poisson. Do ponto de vista de paralelismo, esse passo de projeção **não é puramente local**: resolver a equação de Poisson exige um solver global (FFT ou um método iterativo, como gradiente conjugado), criando dependências entre células distantes dentro do mesmo passo de tempo. Isso torna a paralelização mais complexa do que a de um algoritmo local, além de exigir tratamento especial de condições de contorno para obstáculos de formato arbitrário.
+- **Smoothed Particle Hydrodynamics (SPH)**: abordagem baseada em partículas (lagrangiana, no mesmo espírito do N-body avaliado anteriormente), muito usada para líquidos e superfícies livres. A cada passo, cada partícula precisa localizar suas vizinhas para calcular forças de pressão/viscosidade, o que exige estruturas de aceleração espacial (grades uniformes, árvores) — um custo extra de implementação e de balanceamento de carga entre threads que o LBM evita por operar sobre uma grade regular fixa.
+- **Lattice Boltzmann Method (escolhido)**: como descrito a seguir, opera inteiramente com atualizações **locais por célula** — sem solver global de pressão e sem busca de vizinhos — o que o torna o método mais direto de mapear para paralelismo massivo em GPU, além de lidar naturalmente com obstáculos arbitrários via condição de *bounce-back*.
+
+### 2.2 Fundamentos do Lattice Boltzmann Method
 
 O LBM discretiza o domínio do fluido em uma grade regular de células. Em cada célula, em vez de armazenar diretamente densidade e velocidade, o método guarda um conjunto de **funções de distribuição** `f_i`, que representam a fração de "pacotes" de fluido se movendo em um pequeno conjunto fixo de direções discretas. No caso 3D, o modelo mais comum é o **D3Q19** (3 dimensões, 19 direções discretas por célula), que equilibra bem precisão física e custo computacional.
 
@@ -38,15 +46,15 @@ As **condições de contorno** são o que torna o método especialmente adequado
 - **Entrada de vento**: uma condição de velocidade constante é imposta em uma face da caixa de simulação;
 - **Saída**: condição de fluxo livre na face oposta.
 
-### 2.2 Da forma 3D ao obstáculo da simulação
+### 2.3 Da forma 3D ao obstáculo da simulação
 
 A forma escolhida/deformada pelo usuário (malha de triângulos simples, sem topologia dinâmica) é convertida em um conjunto de células "sólidas" dentro da grade 3D através de um passo de **voxelização** — executado apenas quando o usuário edita a forma, não a cada frame, já que o custo desse passo é bem menor que o da simulação contínua.
 
-### 2.3 Por que esse problema tem alta carga computacional
+### 2.4 Por que esse problema tem alta carga computacional
 
 Para uma simulação em tempo real (24–60 FPS) com uma grade de, por exemplo, 128×128×128 células (~2 milhões de células), cada frame exige recalcular colisão e propagação para todas as células, cada uma envolvendo um número não trivial de operações de ponto flutuante sobre as 19 direções do D3Q19. Isso representa dezenas a centenas de milhões de operações por frame, sustentadas continuamente enquanto a simulação roda — uma carga claramente inviável em tempo real para uma implementação sequencial, mas perfeitamente tratável em GPU.
 
-### 2.4 Benefícios da paralelização
+### 2.5 Benefícios da paralelização
 
 A atualização de cada célula do LBM depende **apenas do estado da própria célula e de suas vizinhas imediatas** no passo anterior (um padrão de *stencil*, semelhante ao Jogo da Vida ou à equação do calor vistos em aula). Não há dependências globais dentro de um mesmo passo de tempo, o que torna o algoritmo **embaraçosamente paralelo** por célula — um encaixe quase perfeito com o paradigma SIMT das GPUs (threads independentes executando a mesma instrução sobre dados diferentes).
 
@@ -88,5 +96,6 @@ Paralelismo a nível de múltiplas máquinas (MPI) está fora do escopo deste pr
 3. TÖLKE, J.; KRAFCZYK, M. **TeraFLOP computing on a desktop PC with GPUs for 3D CFD**. International Journal of Computational Fluid Dynamics, v. 22, n. 7, p. 443–456, 2008.
 4. OBRECHT, C. et al. **Multi-GPU implementation of the lattice Boltzmann method**. Computers & Mathematics with Applications, v. 65, n. 2, p. 252–261, 2013.
 5. HARRIS, M. **Fast Fluid Dynamics Simulation on the GPU**. In: GPU Gems, cap. 38, NVIDIA/Addison-Wesley, 2004. (técnica alternativa baseada em Navier-Stokes, usada como contraponto ao LBM)
-6. BRIDSON, R. **Fluid Simulation for Computer Graphics**. 2. ed. CRC Press, 2015.
-7. NVIDIA. **CUDA Samples — fluidsGL e particles**. Disponível em: https://github.com/NVIDIA/cuda-samples (referência de implementação e técnicas de interação/visualização em GPU).
+6. STAM, J. **Stable Fluids**. In: Proceedings of SIGGRAPH '99, p. 121–128, 1999. (método de resolução direta de Navier-Stokes usado no sample `fluidsGL`, base da comparação com o LBM)
+7. BRIDSON, R. **Fluid Simulation for Computer Graphics**. 2. ed. CRC Press, 2015.
+8. NVIDIA. **CUDA Samples — fluidsGL e particles**. Disponível em: https://github.com/NVIDIA/cuda-samples (referência de implementação e técnicas de interação/visualização em GPU).
