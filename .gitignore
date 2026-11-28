@@ -1,0 +1,20 @@
+# Binarios compilados
+*.exe
+*.o
+*.obj
+lbm_serial
+lbm_openmp
+lbm_cuda
+lbm_viewport
+
+# Bibliotecas de terceiros baixadas (raylib etc.)
+third_party/
+*.zip
+
+# Saidas da simulacao (slices e visualizacoes geradas)
+*.pgm
+*.ppm
+*.gif
+slice_*.png
+frame_*.png
+escoamento_*.png
